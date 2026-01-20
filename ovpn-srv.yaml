@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Debian 13 secure server with Docker (t3.nano, SSH on custom port)"
+
+Parameters:
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: "SSH key pair (ed25519 recommended)"
+  SSHPort:
+    Type: Number
+    Default: 2222
+    Description: "Custom SSH port"
+
+Resources:
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow custom SSH port"
+      VpcId: !Ref AWS::NoValue
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref SSHPort
+          ToPort: !Ref SSHPort
+          CidrIp: !Sub "${AWS::AccountId}/32"
+      Tags:
+        - Key: Name
+          Value: "debian13-secure-sg"
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.nano
+      ImageId: ami-05d91d8592469269a   # Debian 13 (eu-north-1)
+      KeyName: !Ref KeyPairName
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: "/dev/xvda"
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+
+          apt update -y
+          apt upgrade -y
+
+          apt install -y sudo curl ca-certificates gnupg ufw
+
+          sed -i "s/^#Port 22/Port ${SSHPort}/" /etc/ssh/sshd_config
+          sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+          sed -i 's/^PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+
+          ufw allow ${SSHPort}/tcp
+          ufw --force enable
+
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/debian/gpg | \
+            gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          chmod a+r /etc/apt/keyrings/docker.gpg
+
+          echo \
+            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+            https://download.docker.com/linux/debian \
+            $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+            > /etc/apt/sources.list.d/docker.list
+
+          apt update -y
+          apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+          usermod -aG docker admin
+
+          systemctl restart ssh
+
+Outputs:
+  InstanceId:
+    Description: "EC2 Instance ID"
+    Value: !Ref Instance
+
+  PublicIP:
+    Description: "Public IP of the instance"
+    Value: !GetAtt Instance.PublicIp
+
+  SSHCommand:
+    Description: "SSH command to connect"
+    Value: !Sub "ssh -i <your-key.pem> -p ${SSHPort} admin@${Instance.PublicIp}"
