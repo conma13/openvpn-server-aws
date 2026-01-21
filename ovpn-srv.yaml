@@ -3,7 +3,8 @@ Description: "OpenVPN/stunnel on EC2"
 
 Parameters:
   KeyPairName:
-    Type: AWS::EC2::KeyPair::conma
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: "conma"
     Description: "SSH key pair (ed25519 recommended)"
   SSHPort:
     Type: Number
@@ -16,15 +17,11 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: "Allow custom SSH port"
-      VpcId: !Ref AWS::NoValue
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: !Ref SSHPort
           ToPort: !Ref SSHPort
-          CidrIp: !Sub "${AWS::AccountId}/32"
-      Tags:
-        - Key: Name
-          Value: "openvpn-server-sg"
+          CidrIp: 0.0.0.0/0
 
   Instance:
     Type: AWS::EC2::Instance
@@ -53,12 +50,12 @@ Resources:
 Outputs:
   InstanceId:
     Description: "EC2 Instance ID"
-    Value: !Ref Instance
+    Value: !Ref EC2Instance
 
   PublicIP:
     Description: "Public IP of the instance"
-    Value: !GetAtt Instance.PublicIp
+    Value: !GetAtt EC2Instance.PublicIp
 
   SSHCommand:
     Description: "SSH command to connect"
-    Value: !Sub "ssh -i <your-key.pem> -p ${SSHPort} admin@${Instance.PublicIp}"
+    Value: !Sub "ssh -i <your-key.pem> -p ${SSHPort} admin@${EC2Instance.PublicIp}"
