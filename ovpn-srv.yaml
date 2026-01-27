@@ -2,60 +2,103 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: "OpenVPN/stunnel on EC2"
 
 Parameters:
-  KeyPairName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Default: "conma"
-    Description: "SSH key pair (ed25519 recommended)"
-  SSHPort:
-    Type: Number
-    Default: 22
-    Description: "Custom SSH port"
+  InstanceType:
+    Type: String
+    Default: t3.nano
+
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-0e63a5a9c1c7e5563
+
+  ScriptsURL:
+    Type: String
+    Default: "https://raw.githubusercontent.com/conma13/openvpn-server-aws/refs/heads/main"
+    Description: "URL where BootStrapScript live, without ending slash"
+
+  BootStrapScript:
+    Type: String
+    Default: "bootstrap.sh"
+    Description: "The name of bootstrap script in ScriptsURL without leading slash"
+  
+  Subnet:
+    Type: AWS::EC2::Subnet::Id
 
 Resources:
 
-  SecurityGroup:
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Path: /
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref Role
+      Path: /
+
+  InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: "Allow custom SSH port"
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: !Ref SSHPort
-          ToPort: !Ref SSHPort
+      GroupDescription: Allow outbound traffic only
+      VpcId: !Select [0, !Split [",", !ImportValue DefaultVPC]] # Replace if needed
+      SecurityGroupIngress: []
+      SecurityGroupEgress:
+        - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
-  Instance:
-    Type: AWS::EC2::Instance
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
     Properties:
-      InstanceType: t3.nano
-      ImageId: ami-0e63a5a9c1c7e5563
-      KeyName: !Ref KeyPairName
-      SecurityGroupIds:
-        - !Ref SecurityGroup
-      BlockDeviceMappings:
-        - DeviceName: "/dev/xvda"
-          Ebs:
-            VolumeSize: 8
-            VolumeType: gp3
-      UserData:
-        Fn::Base64: !Sub |
-          #!/usr/bin/env bash
-          set -e
-          # Update system
-          # apt update -y
-          # apt upgrade -y
-          # Load scripts from GitHub
-          # Run install.sh
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref InstanceSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            exec > >(tee -a /var/log/user-data.log) 2>&1
+            echo "===== UserData started at $(date) ====="
+            : "${ScriptsURL:?ScriptsURL is not set}"
+            : "${BootStrapScript:?BootStrapScript is not set}"
+            TMPDIR=$(mktemp -d)
+            trap "rm -rf '$TMPDIR'" EXIT
+            echo "Using temp dir: $TMPDIR"
+            cd "$TMPDIR"
+            echo "Downloading bootstrap script: ${ScriptsURL}/${BootStrapScript}"
+            curl -fLO "${ScriptsURL}/${BootStrapScript}"
+            chmod +x "$BootStrapScript"
+            echo "Running bootstrap script..."
+            "./$BootStrapScript" "$ScriptsURL" "$TMPDIR"
+            echo "===== UserData finished at $(date) ====="
 
-
-Outputs:
-  InstanceId:
-    Description: "EC2 Instance ID"
-    Value: !Ref Instance
-
-  PublicIP:
-    Description: "Public IP of the instance"
-    Value: !GetAtt Instance.PublicIp
-
-  SSHCommand:
-    Description: "SSH command to connect"
-    Value: !Sub "ssh -i <your-key.pem> -p ${SSHPort} admin@${Instance.PublicIp}"
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: "1"
+      MaxSize: "1"
+      DesiredCapacity: "1"
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref Subnet
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 0
+        MaxBatchSize: 1
+        PauseTime: PT0S
+        WaitOnResourceSignals: false
