@@ -50,12 +50,12 @@ Resources:
 Outputs:
   InstanceId:
     Description: "EC2 Instance ID"
-    Value: !Ref EC2Instance
+    Value: !Ref Instance
 
   PublicIP:
     Description: "Public IP of the instance"
-    Value: !GetAtt EC2Instance.PublicIp
+    Value: !GetAtt Instance.PublicIp
 
   SSHCommand:
     Description: "SSH command to connect"
-    Value: !Sub "ssh -i <your-key.pem> -p ${SSHPort} admin@${EC2Instance.PublicIp}"
+    Value: !Sub "ssh -i <your-key.pem> -p ${SSHPort} admin@${Instance.PublicIp}"
