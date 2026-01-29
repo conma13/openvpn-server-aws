@@ -1,6 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "OpenVPN/stunnel on EC2"
 
+# TODO(conma): Add parameter to select security keys for instance
 Parameters:
   InstanceType:
     Type: String

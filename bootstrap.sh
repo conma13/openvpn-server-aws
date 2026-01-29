@@ -41,4 +41,11 @@ chmod +x setup-firewall.sh
 echo "BOOTSTRAP Running setup-firewall.sh"
 ./setup-firewall.sh "$SSHPort"
 
+# Setup Docker
+echo "BOOTSTRAP Downloading script to setup Docker: ${ScriptsURL}/setup-docker.sh"
+curl -fLO "${ScriptsURL}/setup-docker.sh"
+chmod +x setup-docker.sh
+echo "BOOTSTRAP Running setup-docker.sh"
+./setup-docker.sh
+
 echo "===== END Bootstrap at $(date) ====="
