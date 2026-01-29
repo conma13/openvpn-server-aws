@@ -15,6 +15,11 @@ Parameters:
     Default: "https://raw.githubusercontent.com/conma13/openvpn-server-aws/refs/heads/main"
     Description: "URL where BootStrapScript live, without ending slash"
 
+  CustomSSHPort:
+    Type: String
+    Default: "22"
+    Description: "SSH port that will be using for manage instances"
+
   BootStrapScript:
     Type: String
     Default: "bootstrap.sh"
@@ -71,19 +76,19 @@ Resources:
             #!/usr/bin/env bash
             set -euo pipefail
             exec > >(tee -a /var/log/user-data.log) 2>&1
-            echo "===== UserData started at $(date) ====="
+            echo "===== START UserData at $(date) ====="
             : "${ScriptsURL:?ScriptsURL is not set}"
             : "${BootStrapScript:?BootStrapScript is not set}"
             TMPDIR=$(mktemp -d)
             trap "rm -rf '$TMPDIR'" EXIT
-            echo "Using temp dir: $TMPDIR"
+            echo "USERDATA Using temp dir: $TMPDIR"
             cd "$TMPDIR"
-            echo "Downloading bootstrap script: ${ScriptsURL}/${BootStrapScript}"
+            echo "USERDATA Downloading bootstrap script: ${ScriptsURL}/${BootStrapScript}"
             curl -fLO "${ScriptsURL}/${BootStrapScript}"
             chmod +x "$BootStrapScript"
-            echo "Running bootstrap script..."
-            "./$BootStrapScript" "$ScriptsURL" "$TMPDIR"
-            echo "===== UserData finished at $(date) ====="
+            echo "USERDATA Running bootstrap script..."
+            "./$BootStrapScript" "$ScriptsURL" "$TMPDIR" "CustomSSHPort"
+            echo "===== END UserData at $(date) ====="
 
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
