@@ -1,0 +1,59 @@
+version: "3.8"
+
+services:
+  nginx-proxy:
+    image: jwilder/nginx-proxy:alpine
+    container_name: nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./vhost:/etc/nginx/vhost.d
+      - ./html:/usr/share/nginx/html
+    networks:
+      - vpnnet
+
+  letsencrypt:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    container_name: letsencrypt
+    restart: unless-stopped
+    environment:
+      - NGINX_PROXY_CONTAINER=nginx-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./certs:/etc/nginx/certs
+      - ./vhost:/etc/nginx/vhost.d
+      - ./html:/usr/share/nginx/html
+    networks:
+      - vpnnet
+
+  stunnel:
+    image: alpine/stunnel
+    container_name: stunnel
+    restart: unless-stopped
+    environment:
+      - VIRTUAL_HOST=vpn.example.com
+      - VIRTUAL_PORT=8443
+      - LETSENCRYPT_HOST=vpn.example.com
+      - LETSENCRYPT_EMAIL=admin@example.com
+    volumes:
+      - ./stunnel/stunnel.conf:/etc/stunnel/stunnel.conf:ro
+      - ./certs:/etc/stunnel/certs:ro
+    networks:
+      - vpnnet
+
+  openvpn:
+    image: kylemanna/openvpn
+    container_name: openvpn
+    restart: unless-stopped
+    volumes:
+      - ./openvpn-data:/etc/openvpn
+    networks:
+      - vpnnet
+
+networks:
+  vpnnet:
+    driver: bridge
